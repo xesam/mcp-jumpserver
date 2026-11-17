@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mcp-jumpserver": {
+      "command": "node",
+      "args": ["../dist/index.js"],
+      "env": {
+        "MCP_JUMPSERVER_CONFIG": "mcp-jumpserver.yaml"
+      }
+    }
+  }
+}

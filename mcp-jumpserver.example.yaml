@@ -1,0 +1,25 @@
+jumpserver:
+  sshTarget: jumpserver # Host alias in ~/.ssh/config; authentication (e.g. IdentityFile) is configured there
+  auth:
+    method: ssh_key
+
+ssh:
+  connect_timeout: 30
+  keepalive_interval: 30
+
+session:
+  idle_timeout: 600 # Global local idle reaper; set for your environment (not auto-detected).
+  max_sessions: 3
+  command_timeout: 60
+  output_limit: 65536
+
+assets:
+  allowed:
+    - asset-name # replace with your asset name
+
+expect:
+  menu_timeout: 30
+  shell_timeout: 30
+  close_timeout: 10
+  quiet_period_ms: 1000
+  input_timeout: 10

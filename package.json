@@ -1,0 +1,58 @@
+{
+  "name": "mcp-jumpserver",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "MCP Server for JumpServer bastion host access with persistent SSH sessions",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xesam/mcp-jumpserver.git"
+  },
+  "homepage": "https://github.com/xesam/mcp-jumpserver#readme",
+  "bugs": {
+    "url": "https://github.com/xesam/mcp-jumpserver/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "jumpserver",
+    "ssh",
+    "bastion-host"
+  ],
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "mcp-jumpserver.example.yaml"
+  ],
+  "bin": {
+    "mcp-jumpserver": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "check": "tsc --noEmit",
+    "check:scripts": "node --check scripts/smoke.mjs && node --check scripts/e2e.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "js-yaml": "^4.1.0",
+    "node-pty": "^1.1.0-beta34",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}

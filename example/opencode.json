@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "mcp-jumpserver": {
+        "type": "local",
+        "command": ["node", "../dist/index.js"],
+        "cwd": ".",
+        "environment": {
+          "MCP_JUMPSERVER_CONFIG": "mcp-jumpserver.yaml"
+        }
+      }
+    }
+  }
+}

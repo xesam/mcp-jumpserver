@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.env
+.*
+!.gitignore
+!example/.mcp.json
+!example/.codex/
+example/.codex/*
+!example/.codex/config.toml
+CLAUDE.md
