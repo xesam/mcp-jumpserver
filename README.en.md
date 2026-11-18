@@ -20,6 +20,7 @@ All remote access goes through JumpServer, including its authentication, authori
 
 - Node.js 20 or later
 - OpenSSH client
+- The toolchain required to build the native module `node-pty` on first install: Xcode Command Line Tools on macOS, Visual Studio C++ build tools on Windows, or python3 with make and g++ on Linux
 - Access to a JumpServer SSH endpoint and authorization for the target assets
 - SSH key authentication, with the key specified in `~/.ssh/config` or by `jumpserver.auth.key_path` in the configuration file
 
@@ -32,21 +33,40 @@ All remote access goes through JumpServer, including its authentication, authori
 
 ## Installation
 
-Build from source:
+The package is published to npm; an MCP host starts it with `npx`, with no install or build required:
 
 ```bash
+npx -y mcp-jumpserver
+```
+
+This command starts the stdio MCP server directly and is normally not run by hand — see "MCP Host Setup" for how to configure it in a host. On first run npm downloads the package and compiles the native module. You can also install globally and then use the `mcp-jumpserver` command:
+
+```bash
+npm install -g mcp-jumpserver
+```
+
+Build from source (for developing this server):
+
+```bash
+git clone https://github.com/xesam/mcp-jumpserver.git
+cd mcp-jumpserver
 npm install
 npm run build
 ```
 
-The build output is in `dist/`, with `dist/index.js` as the entry point. Once the package is published to npm, an MCP host can start it with `npx -y mcp-jumpserver` without building from source.
+The build output is in `dist/`, with `dist/index.js` as the entry point.
 
 ## Configuration
 
-Copy the example configuration and edit it for your environment. See [`mcp-jumpserver.example.yaml`](mcp-jumpserver.example.yaml) for all fields and defaults.
+Copy the example configuration and edit it for your environment. See [`mcp-jumpserver.example.yaml`](mcp-jumpserver.example.yaml) for all fields and defaults; the file ships with the npm package and is also available in [the repository](https://github.com/xesam/mcp-jumpserver/blob/main/mcp-jumpserver.example.yaml):
 
 ```bash
+# Without a local clone, download from GitHub
+curl -o mcp-jumpserver.yaml https://raw.githubusercontent.com/xesam/mcp-jumpserver/main/mcp-jumpserver.example.yaml
+
+# With a clone of the repository, or a local install of the package, copy the file
 cp mcp-jumpserver.example.yaml mcp-jumpserver.yaml
+cp node_modules/mcp-jumpserver/mcp-jumpserver.example.yaml mcp-jumpserver.yaml
 ```
 
 The configuration file path is taken from the `MCP_JUMPSERVER_CONFIG` environment variable. If it is not set, the server reads `mcp-jumpserver.yaml` from the process working directory. This file holds real environment details, and the repository's `.gitignore` does not exclude it, so take care not to commit it.
@@ -95,14 +115,14 @@ Other fields:
 
 ## MCP Host Setup
 
-Configure this server in your MCP host as a local stdio server and set `MCP_JUMPSERVER_CONFIG` to the absolute path of your configuration file. Example for a source build:
+Configure this server in your MCP host as a local stdio server and set `MCP_JUMPSERVER_CONFIG` to the absolute path of your configuration file. Example for the npm package:
 
 ```json
 {
   "mcpServers": {
     "mcp-jumpserver": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jumpserver/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "mcp-jumpserver"],
       "env": {
         "MCP_JUMPSERVER_CONFIG": "/absolute/path/to/mcp-jumpserver.yaml"
       }
@@ -111,7 +131,7 @@ Configure this server in your MCP host as a local stdio server and set `MCP_JUMP
 }
 ```
 
-Once the package is published to npm, you can change `command` to `npx` and `args` to `["-y", "mcp-jumpserver"]`.
+To pin a version, write `mcp-jumpserver@<version>` in `args` instead of `mcp-jumpserver`. With a global install, `command` can be `mcp-jumpserver` directly; for a source build, use `"command": "node"` with `args` set to `["/absolute/path/to/mcp-jumpserver/dist/index.js"]`.
 
 Host configuration formats vary. The repository's [example project](example/README.md) (in Chinese) provides working configurations for Claude Code, OpenCode, and Codex, along with step-by-step verification.
 

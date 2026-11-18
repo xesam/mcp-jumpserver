@@ -20,6 +20,7 @@
 
 - Node.js 20 或更高版本
 - OpenSSH 客户端
+- 首次安装时编译原生模块 `node-pty` 所需的工具链：macOS 为 Xcode Command Line Tools，Windows 为 Visual Studio 的 C++ 构建工具，Linux 为 python3 与 make、g++
 - 可访问 JumpServer SSH 接入端点，并已获准访问目标资产
 - 使用 SSH 密钥认证，通过 `~/.ssh/config` 或配置文件中的 `jumpserver.auth.key_path` 指定密钥
 
@@ -32,21 +33,40 @@
 
 ## 安装
 
-从源码构建：
+包已发布到 npm，由 MCP Host 通过 `npx` 启动，无需安装或构建：
 
 ```bash
+npx -y mcp-jumpserver
+```
+
+该命令直接启动 stdio MCP 服务器，通常不在命令行手动运行，而是在 MCP Host 中配置，见「MCP Host 接入」。首次运行时 npm 会下载包并编译原生模块。也可以全局安装，之后直接使用 `mcp-jumpserver` 命令：
+
+```bash
+npm install -g mcp-jumpserver
+```
+
+从源码构建（用于开发本服务器）：
+
+```bash
+git clone https://github.com/xesam/mcp-jumpserver.git
+cd mcp-jumpserver
 npm install
 npm run build
 ```
 
-构建产物位于 `dist/`，入口为 `dist/index.js`。包发布到 npm 后，可以不构建源码，直接由 MCP Host 通过 `npx -y mcp-jumpserver` 启动。
+构建产物位于 `dist/`，入口为 `dist/index.js`。
 
 ## 配置
 
-复制示例配置并按环境修改。完整的字段和默认值见 [`mcp-jumpserver.example.yaml`](mcp-jumpserver.example.yaml)。
+复制示例配置并按环境修改。完整的字段和默认值见 [`mcp-jumpserver.example.yaml`](mcp-jumpserver.example.yaml)，该文件随 npm 包分发，也可从[仓库](https://github.com/xesam/mcp-jumpserver/blob/main/mcp-jumpserver.example.yaml)获取：
 
 ```bash
+# 未克隆仓库时，从 GitHub 下载
+curl -o mcp-jumpserver.yaml https://raw.githubusercontent.com/xesam/mcp-jumpserver/main/mcp-jumpserver.example.yaml
+
+# 克隆了仓库，或本地安装过包时，直接复制
 cp mcp-jumpserver.example.yaml mcp-jumpserver.yaml
+cp node_modules/mcp-jumpserver/mcp-jumpserver.example.yaml mcp-jumpserver.yaml
 ```
 
 配置文件路径由环境变量 `MCP_JUMPSERVER_CONFIG` 指定，未设置时读取进程工作目录下的 `mcp-jumpserver.yaml`。该文件含真实环境信息，仓库的 `.gitignore` 没有排除它，注意不要提交到版本控制。
@@ -95,14 +115,14 @@ jumpserver:
 
 ## MCP Host 接入
 
-在 MCP Host 中把本服务器配置为本地 stdio Server，并将 `MCP_JUMPSERVER_CONFIG` 设为配置文件的绝对路径。从源码构建时的配置示例：
+在 MCP Host 中把本服务器配置为本地 stdio Server，并将 `MCP_JUMPSERVER_CONFIG` 设为配置文件的绝对路径。通过 npm 包使用时的配置示例：
 
 ```json
 {
   "mcpServers": {
     "mcp-jumpserver": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jumpserver/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "mcp-jumpserver"],
       "env": {
         "MCP_JUMPSERVER_CONFIG": "/absolute/path/to/mcp-jumpserver.yaml"
       }
@@ -111,7 +131,7 @@ jumpserver:
 }
 ```
 
-包发布到 npm 后，可将 `command` 改为 `npx`，`args` 改为 `["-y", "mcp-jumpserver"]`。
+需要固定版本时，把 `args` 中的 `mcp-jumpserver` 写成 `mcp-jumpserver@<版本号>`。已全局安装时，`command` 可直接写 `mcp-jumpserver`；从源码构建时，写 `"command": "node"`，`args` 写 `["/absolute/path/to/mcp-jumpserver/dist/index.js"]`。
 
 不同 Host 的配置格式不同。仓库的[示例项目](example/README.md)提供了 Claude Code、OpenCode 和 Codex 的可运行配置，以及逐步验证的方法。
 
