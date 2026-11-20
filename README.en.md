@@ -20,7 +20,7 @@ All remote access goes through JumpServer, including its authentication, authori
 
 - Node.js 20 or later
 - OpenSSH client
-- The toolchain required to build the native module `node-pty` on first install: Xcode Command Line Tools on macOS, Visual Studio C++ build tools on Windows, or python3 with make and g++ on Linux
+- `node-pty` ships prebuilt binaries for mainstream platforms, so local compilation is normally unnecessary; the build toolchain is only needed when no prebuilt binary matches the platform (Xcode Command Line Tools on macOS, Visual Studio C++ build tools on Windows, or python3 with make and g++ on Linux)
 - Access to a JumpServer SSH endpoint and authorization for the target assets
 - SSH key authentication, with the key specified in `~/.ssh/config` or by `jumpserver.auth.key_path` in the configuration file
 
@@ -39,7 +39,7 @@ The package is published to npm; an MCP host starts it with `npx`, with no insta
 npx -y mcp-jumpserver
 ```
 
-This command starts the stdio MCP server directly and is normally not run by hand — see "MCP Host Setup" for how to configure it in a host. On first run npm downloads the package and compiles the native module. You can also install globally and then use the `mcp-jumpserver` command:
+This command starts the stdio MCP server directly and is normally not run by hand — see "MCP Host Setup" for how to configure it in a host. On first run npm downloads the package (`node-pty` ships prebuilt binaries for mainstream platforms, so local compilation is normally unnecessary). You can also install globally and then use the `mcp-jumpserver` command:
 
 ```bash
 npm install -g mcp-jumpserver
@@ -55,6 +55,13 @@ npm run build
 ```
 
 The build output is in `dist/`, with `dist/index.js` as the entry point.
+
+### Troubleshooting
+
+The error codes returned by a failed `connect` carry direct clues for two environment problems:
+
+- `ssh_not_found`: no `ssh` executable was found in the `PATH` of the MCP server process. The error message includes the current `PATH`. Install the OpenSSH client, or fix `PATH` in the environment that launches the MCP host.
+- `pty_spawn_failed`: node-pty could not spawn the `ssh` process. On macOS the most common cause is node-pty's `spawn-helper` binary missing the executable bit (the error resembles `posix_spawn failed: Permission denied`). Since 0.0.2 a postinstall script restores the bit automatically; in environments that disable lifecycle scripts, run `chmod +x <spawn-helper path>` manually using the path from the error message.
 
 ## Configuration
 

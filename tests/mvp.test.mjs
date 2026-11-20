@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,6 +12,7 @@ import { SessionError } from "../dist/errors.js";
 import { truncateUtf8, truncateUtf8Tail } from "../dist/output.js";
 import { cleanScreenText, readyMarkerPattern, readyProbeCommand, stripTerminalNoise } from "../dist/patterns.js";
 import { hostMismatchWarning } from "../dist/session/hostcheck.js";
+import { describePtySpawnFailure, findExecutableInPath, nodePtySpawnHelperPaths } from "../dist/session/ptycheck.js";
 import { SessionManager } from "../dist/session/manager.js";
 import { ExpectRunner } from "../dist/session/runner.js";
 
@@ -80,6 +81,47 @@ test("host mismatch warning only appears when neither hostname nor prompt contai
     hostMismatchWarning("web-01", "db-02", "[root@db-02 ~]#"),
     'Declared asset "web-01" was not found in hostname "db-02" or prompt line "[root@db-02 ~]#". The session may be on a different host. Confirm with the user before executing commands.',
   );
+});
+
+test("findExecutableInPath resolves executables and skips non-executable matches", async (t) => {
+  const tempDir = await mkdtemp(join(tmpdir(), "jumpserver-mcp-patycheck-"));
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+  await writeFile(join(tempDir, "ssh"), "#!/bin/sh\n");
+  await chmod(join(tempDir, "ssh"), 0o755);
+  await writeFile(join(tempDir, "git"), "#!/bin/sh\n");
+  await chmod(join(tempDir, "git"), 0o644);
+  await writeFile(join(tempDir, "curl.exe"), "#!/bin/sh\n");
+
+  assert.equal(findExecutableInPath("ssh", { PATH: tempDir }), join(tempDir, "ssh"));
+  assert.equal(findExecutableInPath("git", { PATH: tempDir }), undefined);
+  assert.equal(
+    findExecutableInPath("ssh", { PATH: `${tempDir}${delimiter}${join(tempDir, "missing")}` }),
+    join(tempDir, "ssh"),
+  );
+  assert.equal(findExecutableInPath("ssh", {}), undefined);
+  assert.equal(findExecutableInPath("curl", { PATH: tempDir }), undefined);
+  // Windows matches without the exec bit and falls back to the .exe suffix
+  assert.equal(findExecutableInPath("git", { PATH: tempDir }, "win32"), join(tempDir, "git"));
+  assert.equal(findExecutableInPath("curl", { PATH: tempDir }, "win32"), join(tempDir, "curl.exe"));
+  assert.equal(findExecutableInPath("missing", { PATH: tempDir }, "win32"), undefined);
+});
+
+test("describePtySpawnFailure reports ssh and spawn-helper remediation", async (t) => {
+  const tempDir = await mkdtemp(join(tmpdir(), "jumpserver-mcp-patycheck-"));
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+  const originalPath = process.env.PATH;
+  process.env.PATH = tempDir;
+  t.after(() => { process.env.PATH = originalPath; });
+
+  const withoutSsh = describePtySpawnFailure(new Error("posix_spawnp failed."));
+  assert.match(withoutSsh, /posix_spawnp failed\./);
+  assert.match(withoutSsh, /ssh is not in PATH of the MCP server process/);
+
+  await writeFile(join(tempDir, "ssh"), "#!/bin/sh\n");
+  await chmod(join(tempDir, "ssh"), 0o755);
+  const withSsh = describePtySpawnFailure("boom");
+  assert.match(withSsh, /boom/);
+  assert.doesNotMatch(withSsh, /ssh is not in PATH/);
 });
 
 test("expect config defaults apply to an omitted section and to omitted fields", async (t) => {
@@ -540,6 +582,48 @@ test("connect replaces a session whose SSH runner has exited", async () => {
   assert.equal(runners[0].disposed, 1);
   assert.deepEqual(manager.listSessions().sessions.map((s) => s.session_id), [second.session_id]);
   await manager.shutdown();
+});
+
+test("connect without ssh in PATH fails as ssh_not_found before creating a runner", async (t) => {
+  const tempDir = await mkdtemp(join(tmpdir(), "jumpserver-mcp-nossh-"));
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+  const originalPath = process.env.PATH;
+  process.env.PATH = tempDir;
+  t.after(() => { process.env.PATH = originalPath; });
+
+  let factoryCalls = 0;
+  const manager = new SessionManager(loadConfig("mcp-jumpserver.example.yaml"), "nossh-owner", () => {
+    factoryCalls += 1;
+    return withLogin({ isAlive: true });
+  });
+  await assert.rejects(manager.connect("asset-name"), (err) => {
+    assert.equal(err.code, "ssh_not_found");
+    assert.match(err.message, /^connect to asset-name: ssh executable not found in PATH/);
+    return true;
+  });
+  assert.equal(factoryCalls, 0);
+  assert.deepEqual(manager.listSessions(), { sessions: [] });
+});
+
+test("connect preserves pty_spawn_failed and prefixes the asset", async () => {
+  const manager = new SessionManager(loadConfig("mcp-jumpserver.example.yaml"), "spawnfail-owner", () =>
+    withLogin({
+      isAlive: true,
+      async open() {
+        throw new SessionError("pty_spawn_failed", "node-pty failed to spawn the ssh process (posix_spawn failed: Permission denied).");
+      },
+      dispose() {},
+    }),
+  );
+  await assert.rejects(manager.connect("asset-name"), (err) => {
+    assert.equal(err.code, "pty_spawn_failed");
+    assert.equal(
+      err.message,
+      "connect to asset-name failed: node-pty failed to spawn the ssh process (posix_spawn failed: Permission denied).",
+    );
+    return true;
+  });
+  assert.deepEqual(manager.listSessions(), { sessions: [] });
 });
 
 test("shutdown disposes every runner and drops all sessions", async () => {
@@ -1195,6 +1279,33 @@ test("configured SSH keepalive interval is passed to OpenSSH", () => {
   ]);
 });
 
+test("open wraps a non-executable spawn-helper as pty_spawn_failed with remediation", { timeout: 5000 }, async (t) => {
+  if (process.platform === "win32") return t.skip("requires a Unix PTY and shell");
+  const helpers = nodePtySpawnHelperPaths().filter((h) => h.executable);
+  if (helpers.length === 0) return t.skip("no executable node-pty spawn-helper found");
+  const originalModes = [];
+  for (const helper of helpers) {
+    originalModes.push((await stat(helper.path)).mode);
+    await chmod(helper.path, 0o644);
+  }
+  t.after(async () => {
+    for (const [index, helper] of helpers.entries()) await chmod(helper.path, originalModes[index]);
+  });
+
+  const config = loadConfig("mcp-jumpserver.example.yaml");
+  const runner = new ExpectRunner(config);
+  try {
+    await assert.rejects(runner.open(), (err) => {
+      assert.equal(err.code, "pty_spawn_failed");
+      assert.match(err.message, /posix_spawn(p)? failed/);
+      assert.match(err.message, /chmod \+x/);
+      return true;
+    });
+  } finally {
+    runner.dispose();
+  }
+});
+
 const execFileAsync = promisify(execFile);
 
 const FAKE_SSH_SCRIPT = [
@@ -1586,5 +1697,46 @@ test("SIGKILL of the MCP server closes its PTY SSH child", { timeout: 10000 }, a
     }
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("stdio connect reports ssh_not_found when the server PATH lacks ssh", { timeout: 15000 }, async (t) => {
+  if (process.platform === "win32") return t.skip("requires a Unix PATH layout");
+
+  const tempDir = await mkdtemp(join(tmpdir(), "jumpserver-mcp-nossh-stdio-"));
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+  const configPath = join(tempDir, "mcp-jumpserver.yaml");
+  await writeFile(
+    configPath,
+    [
+      "jumpserver:",
+      "  sshTarget: local-test",
+      "  auth:",
+      "    method: ssh_key",
+      "assets:",
+      "  allowed:",
+      "    - asset-name",
+      "",
+    ].join("\n"),
+  );
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: {
+      ...process.env,
+      PATH: tempDir,
+      MCP_JUMPSERVER_CONFIG: configPath,
+    },
+  });
+  const client = new Client({ name: "nossh-stdio-test", version: "0.0.0" });
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({ name: "connect", arguments: { asset: "asset-name" } });
+    assert.equal(result.isError, true);
+    const payload = JSON.parse(result.content[0].text);
+    assert.equal(payload.error, "ssh_not_found");
+    assert.match(payload.message, /ssh executable not found in PATH/);
+  } finally {
+    await client.close();
   }
 });

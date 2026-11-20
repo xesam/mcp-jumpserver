@@ -20,7 +20,7 @@
 
 - Node.js 20 或更高版本
 - OpenSSH 客户端
-- 首次安装时编译原生模块 `node-pty` 所需的工具链：macOS 为 Xcode Command Line Tools，Windows 为 Visual Studio 的 C++ 构建工具，Linux 为 python3 与 make、g++
+- `node-pty` 为主流平台附带预编译二进制，通常无需本地编译；仅当安装环境没有对应平台的预编译产物时，才需要编译工具链（macOS 为 Xcode Command Line Tools，Windows 为 Visual Studio 的 C++ 构建工具，Linux 为 python3 与 make、g++）
 - 可访问 JumpServer SSH 接入端点，并已获准访问目标资产
 - 使用 SSH 密钥认证，通过 `~/.ssh/config` 或配置文件中的 `jumpserver.auth.key_path` 指定密钥
 
@@ -39,7 +39,7 @@
 npx -y mcp-jumpserver
 ```
 
-该命令直接启动 stdio MCP 服务器，通常不在命令行手动运行，而是在 MCP Host 中配置，见「MCP Host 接入」。首次运行时 npm 会下载包并编译原生模块。也可以全局安装，之后直接使用 `mcp-jumpserver` 命令：
+该命令直接启动 stdio MCP 服务器，通常不在命令行手动运行，而是在 MCP Host 中配置，见「MCP Host 接入」。首次运行时 npm 会下载包（`node-pty` 为主流平台附带预编译二进制，通常无需本地编译）。也可以全局安装，之后直接使用 `mcp-jumpserver` 命令：
 
 ```bash
 npm install -g mcp-jumpserver
@@ -55,6 +55,13 @@ npm run build
 ```
 
 构建产物位于 `dist/`，入口为 `dist/index.js`。
+
+### 故障排查
+
+`connect` 失败时返回的错误码包含两类环境问题的直接线索：
+
+- `ssh_not_found`：MCP 服务器进程的 `PATH` 中找不到 `ssh`。错误信息会附带当前的 `PATH`。安装 OpenSSH 客户端，或在启动 MCP Host 的环境中修正 `PATH`。
+- `pty_spawn_failed`：node-pty 无法拉起 `ssh` 进程。在 macOS 上最常见的原因是 node-pty 的 `spawn-helper` 二进制丢失执行位（报错类似 `posix_spawn failed: Permission denied`）。自 0.0.2 起，安装时的 postinstall 脚本会自动补齐执行位；若安装环境禁用了生命周期脚本，可按错误信息中的路径手动执行 `chmod +x <spawn-helper 路径>`。
 
 ## 配置
 

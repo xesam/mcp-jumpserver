@@ -11,6 +11,7 @@ import {
   stripTerminalNoise,
 } from "../patterns.js";
 import type { ExecuteResult, ScreenRead, ShellProbe } from "../types.js";
+import { describePtySpawnFailure } from "./ptycheck.js";
 
 interface Waiter {
   pattern: RegExp;
@@ -267,15 +268,19 @@ export class ExpectRunner {
   }
 
   private spawnPty(cols: number): void {
-    this.pty = ptySpawn("ssh", this.sshArgs(), {
-      name: "xterm-256color",
-      cols,
-      rows: PTY_ROWS,
-      env: Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined)) as {
-        [key: string]: string;
-      },
-      cwd: process.cwd(),
-    });
+    try {
+      this.pty = ptySpawn("ssh", this.sshArgs(), {
+        name: "xterm-256color",
+        cols,
+        rows: PTY_ROWS,
+        env: Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined)) as {
+          [key: string]: string;
+        },
+        cwd: process.cwd(),
+      });
+    } catch (err) {
+      throw new SessionError("pty_spawn_failed", describePtySpawnFailure(err));
+    }
     this.alive = true;
     this.pty.onData((chunk) => this.handleData(chunk));
     this.pty.onExit(({ exitCode }) => this.handleExit(exitCode));

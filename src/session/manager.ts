@@ -14,6 +14,7 @@ import type {
   SessionStatus,
 } from "../types.js";
 import { hostMismatchWarning } from "./hostcheck.js";
+import { assertSshInPath } from "./ptycheck.js";
 import { ExpectRunner } from "./runner.js";
 
 interface SessionRecord {
@@ -160,6 +161,7 @@ export class SessionManager {
     if (this.sessions.size >= this.config.session.max_sessions) {
       throw new SessionError("max_sessions_exceeded", `max_sessions reached: ${this.config.session.max_sessions}`);
     }
+    assertSshInPath(`connect to ${asset}`);
     const session = this.newSession(asset, "connecting");
     const runner = this.runnerFactory(this.config, () => {
       if (session.status !== "closing" && session.status !== "closed" && session.status !== "error") {
@@ -181,6 +183,9 @@ export class SessionManager {
       session.status = "error";
       runner.dispose();
       this.sessions.delete(session.id);
+      if (se.code === "pty_spawn_failed") {
+        throw new SessionError(se.code, `connect to ${asset} failed: ${se.message}`);
+      }
       throw new SessionError("connect_failed", `connect to ${asset} failed: ${se.message}`);
     }
   }

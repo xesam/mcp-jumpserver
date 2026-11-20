@@ -14,7 +14,9 @@ export type ErrorCode =
   | "cancel_failed"
   | "runner_error"
   | "session_not_interactive"
-  | "session_not_ready";
+  | "session_not_ready"
+  | "ssh_not_found"
+  | "pty_spawn_failed";
 
 export class SessionError extends Error {
   constructor(

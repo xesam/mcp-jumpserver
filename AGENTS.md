@@ -16,6 +16,8 @@ npm test               # 先 build，再运行 node --test tests/*.test.mjs
 node scripts/smoke.mjs # 通过 stdio 启动 dist/index.js，校验工具列表与基础错误码（需先 build）
 ```
 
+`npm install` 会执行 `scripts/postinstall.mjs`：在 macOS 上补齐 node-pty `spawn-helper` 的执行位（部分 node-pty 发布包丢失该位会导致所有 PTY spawn 失败）。该脚本随包发布（`files` 中登记），必须自包含、永不使安装失败。
+
 运行单个测试（测试从 `dist/` 导入，修改 `src/` 后必须先 build）：
 
 ```bash
@@ -37,8 +39,8 @@ node scripts/e2e.mjs
 调用链为 `src/index.ts` → `src/tools/index.ts` → `src/session/manager.ts` → `src/session/runner.ts`，分三层：
 
 - **工具层（`tools/index.ts`）**：用 zod 定义入参并注册 MCP 工具。`callTool` 统一把 `SessionError` 转成 `{ error: <code>, message }` 且 `isError: true` 的 JSON 文本返回。新增错误码时在 `errors.ts` 的 `ErrorCode` 联合类型中登记。
-- **会话管理层（`SessionManager`）**：负责会话状态机、资产白名单、归属校验、`max_sessions` 限制、空闲回收。不直接接触 PTY。
-- **PTY 层（`ExpectRunner`）**：一个实例对应一个 `ssh` 子进程，按 expect 方式（发送输入、等待输出匹配正则）驱动交互。
+- **会话管理层（`SessionManager`）**：负责会话状态机、资产白名单、归属校验、`max_sessions` 限制、空闲回收。不直接接触 PTY。`createSession` 新建 SSH 连接前先做 ssh 前置校验（`ptycheck.ts` 的 `assertSshInPath`，PATH 中找不到 `ssh` 时返回 `ssh_not_found`）；runner 构造失败时保留 `pty_spawn_failed` 错误码并补充资产上下文，其余错误统一包装为 `connect_failed`。
+- **PTY 层（`ExpectRunner`）**：一个实例对应一个 `ssh` 子进程，按 expect 方式（发送输入、等待输出匹配正则）驱动交互。`spawnPty` 的 PTY spawn 异常由 `ptycheck.ts` 的 `describePtySpawnFailure` 包装为 `pty_spawn_failed`，附带修复建议（`ssh` 不在 PATH、macOS 上 node-pty `spawn-helper` 丢失执行位时给出 `chmod +x` 路径）。
 
 ### 会话状态机
 
